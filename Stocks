@@ -1,0 +1,67 @@
+import os
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+import smtplib
+from email.mime.text import MIMEText
+
+def fetch_data(ticker, period="1y", interval="1d"):
+    stock = yf.Ticker(ticker)
+    df = stock.history(period=period, interval=interval)
+    return df
+
+def add_indicators(df):
+    df['SMA50'] = ta.sma(df['Close'], length=50)
+    df['SMA200'] = ta.sma(df['Close'], length=200)
+    df['RSI'] = ta.rsi(df['Close'], length=14)
+    macd = ta.macd(df['Close'])
+    df = df.join(macd)
+    return df
+
+def detect_signals(df):
+    signals = {}
+    if df['SMA50'].iloc[-2] < df['SMA200'].iloc[-2] and df['SMA50'].iloc[-1] > df['SMA200'].iloc[-1]:
+        signals['golden_cross'] = True
+    else:
+        signals['golden_cross'] = False
+
+    if df['RSI'].iloc[-1] > 70:
+        signals['rsi_overbought'] = True
+    else:
+        signals['rsi_overbought'] = False
+
+    if df['MACD_12_26_9'].iloc[-2] < df['MACDs_12_26_9'].iloc[-2] and df['MACD_12_26_9'].iloc[-1] > df['MACDs_12_26_9'].iloc[-1]:
+        signals['macd_bullish_cross'] = True
+    else:
+        signals['macd_bullish_cross'] = False
+    
+    return signals
+
+def send_email(subject, body, to_email):
+    from_email = os.getenv('EMAIL_USER')
+    password = os.getenv('EMAIL_PASS')
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = from_email
+    msg['To'] = to_email
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        server.login(from_email, password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+def main():
+    tickers = ['AAPL', 'TSLA', 'MSFT']  # Example watchlist
+    alerts = []
+    for ticker in tickers:
+        df = fetch_data(ticker)
+        df = add_indicators(df)
+        signals = detect_signals(df)
+        if signals['golden_cross'] or signals['macd_bullish_cross'] or signals['rsi_overbought']:
+            alert_msg = f"Ticker: {ticker}\nSignals: {signals}"
+            alerts.append(alert_msg)
+    
+    if alerts:
+        email_body = "\n\n".join(alerts)
+        send_email("Stock Technical Alert", email_body, "your_alert_email@example.com")
+
+if __name__ == "__main__":
+    main()
